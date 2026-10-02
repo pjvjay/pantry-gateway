@@ -1,0 +1,6 @@
+.env
+*.db
+logs/
+scenarios/generated/
+__pycache__/
+.venv/
