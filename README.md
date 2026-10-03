@@ -82,8 +82,14 @@ half of this generator goes away.
 An agent asked for "the cheapest ingredients near me for <recipe link>" has to read the page before
 it can call `plan_from_text`, and the pantry server deliberately never fetches arbitrary URLs. In the
 gateway topology the fetch is a separate MCP server that ContextForge federates next to pantry, so
-the agent sees both toolsets through one endpoint and the pantry server's attack surface stays as
-it is. The tool is the reference [`mcp-server-fetch`](https://pypi.org/project/mcp-server-fetch/)'s
+the agent sees both toolsets through one endpoint. A fetched page is untrusted input: anyone can
+write a recipe page, and what it says reaches the agent as tool output. So that endpoint carries
+only pantry's read-only tools. The write tools (`submit_origin_evidence`, and
+`review_origin_submission`, which approves a submission into the origin data the plan tools honour,
+with no check that the reviewer is not the submitter) stay on servers without fetch, such as
+`pantry-sim`, so instructions planted in a page cannot reach them through this endpoint.
+
+The tool is the reference [`mcp-server-fetch`](https://pypi.org/project/mcp-server-fetch/)'s
 (2026.8.18), served over streamable HTTP by `scripts/fetch_server.py`, a small server on the MCP
 Python SDK that imports mcp-server-fetch's own code (see "Why not mcpgateway.translate" below for
 why it is not the reference server behind ContextForge's stdio bridge any more):
@@ -95,20 +101,24 @@ scripts/run_fetch.sh &          # own venv $CONTEXTFORGE_HOME/.venv-fetch on fir
 curl -s http://127.0.0.1:9100/healthz   # {"status":"ok","settings":{"ignore_robots_txt":false, …}}
 CF_JWT_FILE=~/.contextforge_jwt scripts/register_fetch.sh
 # … created gateway <id> | slug fetch | reachable True
-# … tools: 15 from pantry, 1 from fetch
+# … tools: 13 read-only of 15 from pantry, 1 from fetch
+# …   left out: pantry-review-origin-submission (readOnlyHint=False)
+# …   left out: pantry-submit-origin-evidence (readOnlyHint=False)
 # … created virtual server <id>
-# … the server now offers 16 tools: fetch-fetch, pantry-find-product, …
+# … the server now offers 14 tools: fetch-fetch, pantry-find-product, …
 # … MCP endpoint for agents: http://127.0.0.1:4444/servers/<pantry-recipes id>/mcp
 ```
 
 `register_fetch.sh` registers the fetch server as the federated gateway `fetch` (Streamable HTTP, no
-upstream auth) and creates the virtual server `pantry-recipes` with every pantry tool plus the fetch
-tool; `pantry-sim` is not touched. Re-running it finds both by name, refreshes the `fetch` gateway
-(ContextForge caches a gateway's tools and prompts, so a restarted or replaced fetch server is read
-again) and only rewrites the server's tool list when the pantry or fetch tool set changed. After
-deploying a pantry-api whose tools changed (new parameters on `plan_from_text`, say), run it with
-`REFRESH_PANTRY=true`: the refresh updates the tools in place (same ids), so `pantry-sim` sees the
-new schemas too.
+upstream auth) and creates the virtual server `pantry-recipes` with the fetch tool and every pantry
+tool whose annotations say `readOnlyHint: true` (a new pantry tool without the hint stays out until
+it declares itself read-only); `pantry-sim` is not touched. It stops with an error if the finished
+server offers anything else next to fetch. Re-running it finds both by name, refreshes the `fetch`
+gateway (ContextForge caches a gateway's tools and prompts, so a restarted or replaced fetch server
+is read again) and only rewrites the server's tool list when the pantry or fetch tool set changed.
+After deploying a pantry-api whose tools changed (new parameters on `plan_from_text`, say), run it
+with `REFRESH_PANTRY=true`: the refresh updates the tools in place (same ids), so `pantry-sim` sees
+the new schemas too.
 
 **Settings** (`.env.example`; `run_fetch.sh` reads only the `FETCH_*` keys from
 `$CONTEXTFORGE_HOME/.env`, and the environment wins): `FETCH_PORT`, `FETCH_HOST`,
@@ -205,20 +215,47 @@ own page (`run 1` now succeeds, in 10.6 s); see "What was verified on 2026-10-03
 ## The recipe-link scenario
 
 `scenarios/recipe-link-mala-chicken.yaml` is a gateway-only mcp-sim scenario: a home cook in
-Vancouver pastes the mala chicken link and wants the cheapest basket at nearby stores and what they
-will not find. It is written for ContextForge's tool names (`fetch-fetch`, `pantry-plan-from-text`)
-and for the plan_from_text contract of the pantry-api recipe-link work (`allow_partial`, `max_km`,
-`not_stocked` / `out_of_range` and a per-line `match`), so that pantry-api has to be behind the
-`pantry` gateway before it runs. The committed file has a placeholder server id:
+downtown Vancouver pastes the mala chicken link and wants the cheapest basket at stores within 5 km
+(they walk or take transit) and what they will not find. It is written for ContextForge's tool names
+(`fetch-fetch`, `pantry-plan-from-text`) and for the plan_from_text contract of the pantry-api
+recipe-link work, pjvjay/pantry-api#24 (`allow_partial`, `max_km`, `not_stocked` / `out_of_range`
+and a per-line `match`), so that pantry-api has to be behind the `pantry` gateway before it runs, in
+live mode: DEMO_MODE's stand-in parser reads 16 of the page's 17 lines as not stocked, and even
+given clean names its stand-in selector prices salt as crushed tomatoes. The committed file has a
+placeholder server id:
 
 ```bash
 python3 scripts/make_scenarios.py --recipe "$(cat /tmp/cf_recipes_server_id.txt)"   # → scenarios/generated/
 export CONTEXTFORGE_JWT=$(cat ~/.contextforge_jwt)
-../mcp-sim/.venv/bin/mcpsim catalog scenarios/generated/recipe-link-mala-chicken.yaml   # 16 tools
+../mcp-sim/.venv/bin/mcpsim catalog scenarios/generated/recipe-link-mala-chicken.yaml   # 14 tools
 ../mcp-sim/.venv/bin/mcpsim run scenarios/generated/recipe-link-mala-chicken.yaml
 ```
 
-The checks on the generator and the scenario use mcp-sim's own loader, matcher and tool filter:
+What it checks follows from pantry-db's 160-product catalog (pantry-db#11, loaded by pantry-api#24):
+it stocks all 17 of the page's ingredients, and every product at all four stores. From the default
+point downtown with `max_km: 5`, a correct answer buys every line at Pantry Mart Downtown (0.3 km),
+GreenLeaf Grocers Kitsilano (2.9) or ValueFoods East Van (4.1), never at MegaSave Richmond (13.9 km),
+where the plan without `max_km` buys the sesame seeds. Its `out_of_range` is empty, because Pantry
+Mart Downtown sells everything, so an entry there has been made up. Its `not_stocked` is whatever
+the planner's parse leaves out (nothing, in the recorded plan), so it is checked for shape, and the
+shopping buddy's `hidden_gap` holds the answer to the plan's own list. A code check fails a run whose
+last plan was not limited to 5 km (`stores ≤ 5 km` in the plan's notes). On this catalog, distance
+alone can never put an ingredient out of range from the default point: either a store within range
+sells everything or no store is in range and the plan fails. So `out_of_range` honesty needs a
+price or diet constraint, or a catalog where stores differ, and `not_stocked` honesty needs a page
+with an ingredient the catalog lacks (it has no white pepper, lemongrass, MSG, potato starch or
+saffron). Both are follow-ups, not this scenario.
+
+The runs may overlap (`concurrency` is mcp-sim's default again): `concurrency: 1` was there only
+for the old stdio bridge.
+
+`tests/test_scenarios.py` checks the generator and the scenario with mcp-sim's own loader, matcher
+and tool filter. Its correct answer is not hand-written. `tests/fixtures/mala-chicken-plan-5km.json`
+is a real `plan_from_text` result for the 17 page lines with `allow_partial` and `max_km: 5`,
+recorded once against pantry-api#24 in live mode, and the test copies it into a final_result as the
+scenario instructs. That answer passes every check; an honest partial answer passes; and each wrong
+answer fails exactly the check that names it (a Richmond store, an invented out-of-range entry,
+dropped lines and so on).
 
 ```bash
 ../mcp-sim/.venv/bin/python -m pytest tests/
@@ -272,6 +309,22 @@ The checks on the generator and the scenario use mcp-sim's own loader, matcher a
   model list and ContextForge's health). The mala chicken page through `pantry-recipes`: the same
   markdown as through the bridge, character for character; `/search/chicken/` refused by robots.txt.
 
+## What was verified on 2026-10-03: pantry-recipes and the scenario
+
+* `register_fetch.sh` → `tools: 13 read-only of 15 from pantry, 1 from fetch`, the submit and
+  review tools `left out (readOnlyHint=False)`, `tool list updated (16 -> 14: +0 -2)`; `pantry-sim`
+  still 15. `mcpsim catalog` on the generated scenario lists 14 tools, no write tool.
+* pantry-api#24 (59bbe27) on a fresh 160-product SQLite DB: `plan_from_text` on the page's 17 lines
+  with `allow_partial` and no `max_km` buys the toasted sesame seeds at MegaSave Richmond (13.9 km);
+  with `max_km: 5` (live, the recorded fixture) all 17 lines are planned at the three stores
+  within 5 km, `not_stocked` and `out_of_range` empty, notes `stores ≤ 5 km`, total 56.90.
+  `store_products` has 640 rows: every one of the 160 products at every one of the 4 stores. In
+  DEMO_MODE the same 17 lines with `max_km: 5` give 1 planned line and 16 not stocked.
+* The reviewer's live plan without `max_km`, copied as instructed: the old spec failed it only on
+  `not_stocked $len >= 1`, which no honest answer could meet; the new spec fails it only on
+  `lines[*].store` (the Richmond line).
+* `../mcp-sim/.venv/bin/python -m pytest tests/`: 59 passed.
+
 ## Things that bit, so you don't have to find them again
 
 * Every secret has a strength check at startup; `DEFAULT_USER_PASSWORD` needs 12+ characters even
@@ -290,6 +343,9 @@ The checks on the generator and the scenario use mcp-sim's own loader, matcher a
   correlates replies by JSON-RPC id alone; per its source, `--stateless` and `--jsonResponse` only
   configure an SDK session manager that no request reaches. Do not put a stdio server that more
   than one caller uses behind it; see "Why not mcpgateway.translate" above.
+* `POST /gateways/<id>/tools/refresh` writes back the gateway row it loaded, so a description
+  changed by `PUT /gateways/<id>` just before it is silently lost. `register_fetch.sh` refreshes
+  first and updates the description after.
 * In stateless mode the SDK's streamable-HTTP transport keeps a `GET /mcp` SSE stream open for good
   (nothing will ever be sent on it); `fetch_server.py` answers GET with 405 instead.
 * `DATABASE_URL` must be absolute (`sqlite:////abs/path/mcp.db`); the UI needs

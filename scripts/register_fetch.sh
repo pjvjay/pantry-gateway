@@ -1,7 +1,12 @@
 #!/bin/bash
 # Register the fetch MCP server (scripts/run_fetch.sh) in ContextForge as the federated gateway 'fetch',
-# and expose it together with every pantry tool as the virtual server 'pantry-recipes': one endpoint
-# where an agent can read a recipe page and then plan its basket. 'pantry-sim' is left unchanged.
+# and expose it together with pantry's read-only tools as the virtual server 'pantry-recipes': one
+# endpoint where an agent can read a recipe page and then plan its basket. 'pantry-sim' is left unchanged.
+#
+# Fetched pages are untrusted input (anyone can write a recipe page), so pantry-recipes carries no tool
+# that changes anything: a pantry tool is included only when pantry declares it read-only
+# (annotations.readOnlyHint true), which today leaves out submit_origin_evidence and
+# review_origin_submission. The write tools stay on servers without fetch ('pantry-sim').
 #
 # Inputs (env): CF_URL (default http://127.0.0.1:4444), CF_JWT_FILE (admin JWT), FETCH_MCP_URL
 # (default http://127.0.0.1:${FETCH_PORT:-9100}/mcp), CF_STATE_DIR (default /tmp; the server id is
@@ -127,35 +132,48 @@ for _ in range(30):
         break
     time.sleep(1)
 else:
-    sys.exit(f"gateway 'fetch' ({fetch['id']}) federated no tools after 30 s; check the bridge log")
+    sys.exit(f"gateway 'fetch' ({fetch['id']}) federated no tools after 30 s; check the fetch server log")
 pantry_tools = tools_of(pantry["id"])
 
-print(f"== tools: {len(pantry_tools)} from pantry, {len(fetch_tools)} from fetch")
-for t in pantry_tools + fetch_tools:
-    print(f"  {t.get('name'):42s} original={t.get('originalName') or t.get('original_name')!s:28s} id={t.get('id')}")
-wanted = [t["id"] for t in pantry_tools + fetch_tools]
+def read_only(t):
+    return (t.get("annotations") or {}).get("readOnlyHint") is True
 
-print(f"== virtual server '{SERVER_NAME}' with every pantry tool and the fetch tool(s)")
+
+kept = [t for t in pantry_tools if read_only(t)]
+left_out = [t for t in pantry_tools if not read_only(t)]
+print(f"== tools: {len(kept)} read-only of {len(pantry_tools)} from pantry, {len(fetch_tools)} from fetch")
+for t in kept + fetch_tools:
+    print(f"  {t.get('name'):42s} original={t.get('originalName') or t.get('original_name')!s:28s} id={t.get('id')}")
+for t in left_out:
+    print(f"  left out: {t.get('name')} (readOnlyHint={(t.get('annotations') or {}).get('readOnlyHint')})")
+if not kept:
+    sys.exit("no pantry tool declares readOnlyHint: true; refusing to build a fetch server without pantry tools")
+wanted = [t["id"] for t in kept + fetch_tools]
+
+SERVER_DESCRIPTION = "Pantry's read-only tools plus a web fetch tool: read a recipe link, then plan its basket"
+print(f"== virtual server '{SERVER_NAME}' with pantry's read-only tools and the fetch tool(s)")
 server = next((s for s in items(call("GET", "/servers"), "servers", "items") if s.get("name") == SERVER_NAME), None)
 if server is None:
     created = call("POST", "/servers", {"server": {
-        "name": SERVER_NAME,
-        "description": "Pantry tools plus a web fetch tool: read a recipe link, then plan its basket",
-        "associated_tools": wanted}})
+        "name": SERVER_NAME, "description": SERVER_DESCRIPTION, "associated_tools": wanted}})
     server = created.get("server", created)
     print("created virtual server", server["id"])
 else:
     have = set(server.get("associatedToolIds") or server.get("associated_tool_ids") or [])
-    if have == set(wanted):
+    if have == set(wanted) and server.get("description") == SERVER_DESCRIPTION:
         print(f"virtual server '{SERVER_NAME}' exists with the same {len(wanted)} tools: {server['id']}")
     else:
-        call("PUT", f"/servers/{server['id']}", {"associated_tools": wanted})
+        call("PUT", f"/servers/{server['id']}", {"associated_tools": wanted, "description": SERVER_DESCRIPTION})
         print(f"virtual server '{SERVER_NAME}' exists: {server['id']}; tool list updated "
               f"({len(have)} -> {len(wanted)}: +{len(set(wanted) - have)} -{len(have - set(wanted))})")
 
 check = call("GET", f"/servers/{server['id']}/tools")
 names = sorted(t.get("name") for t in check)
 print(f"== the server now offers {len(names)} tools: {', '.join(names)}")
+fetch_ids = {t["id"] for t in fetch_tools}
+writers = [t.get("name") for t in check if t.get("id") not in fetch_ids and not read_only(t)]
+if writers:
+    sys.exit(f"'{SERVER_NAME}' offers tools that are not read-only next to fetch: {', '.join(writers)}")
 (STATE / "cf_recipes_server_id.txt").write_text(server["id"] + "\n")
 print(f"\nMCP endpoint for agents: {CF}/servers/{server['id']}/mcp   (Authorization: Bearer <ContextForge JWT>)")
 print(f"server id written to {STATE / 'cf_recipes_server_id.txt'}")
