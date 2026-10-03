@@ -1,14 +1,15 @@
 #!/bin/bash
 # Install IBM ContextForge from PyPI into $CONTEXTFORGE_HOME/.venv (default ../contextforge). No Docker needed.
 set -euo pipefail
-HOME_DIR=${CONTEXTFORGE_HOME:-$(cd "$(dirname "$0")/../.." && pwd)/contextforge}
+REPO=$(cd "$(dirname "$0")/.." && pwd)
+HOME_DIR=${CONTEXTFORGE_HOME:-$(cd "$REPO/.." && pwd)/contextforge}
 VERSION=${CONTEXTFORGE_VERSION:-1.0.11}
 mkdir -p "$HOME_DIR" && cd "$HOME_DIR"
 [ -d .venv ] || python3.12 -m venv .venv
 .venv/bin/pip install -q --upgrade pip
 .venv/bin/pip install -q "mcp-contextforge-gateway==$VERSION"
 if [ ! -f .env ]; then
-  cp "$(dirname "$0")/../.env.example" .env
+  cp "$REPO/.env.example" .env
   # generated secrets: ContextForge enforces minimum lengths at startup
   .venv/bin/python - <<'PY'
 import pathlib, re, secrets
