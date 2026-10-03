@@ -9,8 +9,9 @@
 # REFRESH_PANTRY=true first asks ContextForge to re-read the pantry server's tool list (it caches it at
 # registration): needed after deploying a pantry-api whose tools changed. Tools are updated in place by
 # name, so 'pantry-sim' keeps its members and simply sees the new schemas too.
-# Idempotent: re-running finds the gateway and the server by name; when the pantry or fetch tool set
-# has changed since, it updates the server's tool list instead of creating a second server.
+# Idempotent: re-running finds the gateway and the server by name, refreshes the fetch gateway's cached
+# tools and prompts (so a restarted or replaced fetch server is re-read) and its description, and when
+# the tool set has changed since, updates the server's tool list instead of creating a second server.
 set -euo pipefail
 export REFRESH_PANTRY=${REFRESH_PANTRY:-false}
 export CF_URL=${CF_URL:-http://127.0.0.1:4444}
@@ -22,20 +23,29 @@ export CF_JWT_FILE
 echo "== gateway health"
 curl -sf "$CF_URL/health" >/dev/null || { echo "ContextForge does not answer on $CF_URL/health" >&2; exit 1; }
 echo ok
-echo "== fetch bridge health"
-curl -sf "${FETCH_MCP_URL%/mcp}/healthz" >/dev/null || {
+echo "== fetch server health"
+curl -sf "${FETCH_MCP_URL%/mcp}/healthz" || {
   echo "nothing answers on ${FETCH_MCP_URL%/mcp}/healthz; start scripts/run_fetch.sh first" >&2; exit 1; }
-echo ok
+echo
 
 # The JWT is read from the file inside Python, so it never appears on a command line.
 python3 -u - <<'PY'
-import json, os, pathlib, sys, time, urllib.error, urllib.request
+import json
+import os
+import pathlib
+import sys
+import time
+import urllib.error
+import urllib.request
 
 CF = os.environ["CF_URL"].rstrip("/")
 JWT = pathlib.Path(os.environ["CF_JWT_FILE"]).expanduser().read_text().strip()
 FETCH_URL = os.environ["FETCH_MCP_URL"]
 STATE = pathlib.Path(os.environ["CF_STATE_DIR"])
 SERVER_NAME = "pantry-recipes"
+FETCH_DESCRIPTION = ("Fetch server (pantry-gateway scripts/fetch_server.py: mcp-server-fetch's fetch tool over "
+                     "stateless streamable HTTP): reads a public web page as markdown or raw HTML; honours "
+                     "robots.txt and refuses loopback and private addresses unless started otherwise")
 
 
 def call(method, path, body=None):
@@ -81,9 +91,7 @@ fetch = gateway("fetch")
 if fetch is None:
     fetch = call("POST", "/gateways", {
         "name": "fetch",
-        "description": "Reference MCP fetch server (mcp-server-fetch) behind ContextForge's stdio bridge: "
-                       "reads a web page as markdown or raw HTML, honouring robots.txt unless the bridge "
-                       "was started with FETCH_IGNORE_ROBOTS_TXT=true",
+        "description": FETCH_DESCRIPTION,
         "url": FETCH_URL,
         "transport": "STREAMABLEHTTP",
     })
@@ -94,6 +102,15 @@ else:
     if not same_url(fetch.get("url"), FETCH_URL):
         print(f"WARNING: it points at {fetch.get('url')}, not {FETCH_URL}; delete it in /admin to re-register",
               file=sys.stderr)
+    # ContextForge caches a gateway's tools and prompts; re-read them from whatever now serves FETCH_URL.
+    r = call("POST", f"/gateways/{fetch['id']}/tools/refresh?include_prompts=true")
+    print("== refreshed the fetch gateway:", {k: v for k, v in r.items() if k != "gatewayId"})
+    # After the refresh, not before: ContextForge 1.0.11's refresh writes back the gateway row it loaded,
+    # description included, so a description changed just before it is lost.
+    if gateway("fetch").get("description") != FETCH_DESCRIPTION:
+        updated = call("PUT", f"/gateways/{fetch['id']}", {"description": FETCH_DESCRIPTION})
+        print("description updated" if updated.get("description") == FETCH_DESCRIPTION
+              else f"WARNING: description not updated: {updated.get('description')!r}")
 
 pantry = gateway("pantry")
 if pantry is None:
