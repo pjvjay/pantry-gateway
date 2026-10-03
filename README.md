@@ -17,7 +17,9 @@ scripts/mint_jwt.sh         print an admin JWT (REST API and MCP endpoints use t
 scripts/register_pantry.sh  register the pantry server as a federated gateway + create the virtual server
 scripts/run_fetch.sh        run the reference MCP fetch server behind ContextForge's stdio bridge on :9100
 scripts/register_fetch.sh   register it as the gateway 'fetch' + create the virtual server 'pantry-recipes'
-scripts/make_scenarios.py   derive gateway variants of mcp-sim's pantry scenarios (tool names differ, see below)
+scripts/make_scenarios.py   make runnable gateway scenarios for mcp-sim (tool names differ, see below)
+scenarios/                  gateway-only mcp-sim scenarios (they need the fetch tool), server id left blank
+tests/                      the generator and the recipe-link scenario, checked with mcp-sim's own code
 .env.example                every setting the gateway needs, secrets left for install.sh to generate
 docs/                       what was learned setting it up
 ```
@@ -71,8 +73,8 @@ MCPSIM_DRY_RUN=1 ../mcp-sim/.venv/bin/mcpsim run scenarios/generated/cheapest-pe
 
 The generated files are git-ignored because they embed this installation's server id.
 [mcp-sim#5](https://github.com/pjvjay/mcp-sim/issues/5) tracks a `server.tool_names` mapping in the
-framework so one scenario file can run direct or through any gateway; when it lands, this generator
-goes away.
+framework so one scenario file can run direct or through any gateway; when it lands, the renaming
+half of this generator goes away.
 
 ## A fetch tool next to pantry: the `pantry-recipes` server
 
@@ -144,12 +146,34 @@ reproduced):
   downstream session), so concurrent calls share ids. Four concurrent sessions fetching four
   different pages: in each of three rounds through ContextForge, and two rounds directly against
   the bridge, three of the four callers got another caller's page, with no error. Until the bridge
-  correlates per session, fetch one page at a time (mcp-sim: `concurrency: 1`).
+  correlates per session, fetch one page at a time: the recipe-link scenario sets `concurrency: 1`.
 * **10 seconds per call.** The bridge waits 10 s for the answer, then replies `202 Accepted`, which
   reaches the agent as `MCP server error: server answered a request with 202 Accepted`
   (`is_error`). `https://httpbin.org/delay/8` already fails that way (robots.txt plus 8 s).
 * `GET /mcp` answers 405 and no `Mcp-Session-Id` is issued: no server-to-client messages, which a
   fetch server does not need.
+
+## The recipe-link scenario
+
+`scenarios/recipe-link-mala-chicken.yaml` is a gateway-only mcp-sim scenario: a home cook in
+Vancouver pastes the mala chicken link and wants the cheapest basket at nearby stores and what they
+will not find. It is written for ContextForge's tool names (`fetch-fetch`, `pantry-plan-from-text`)
+and for the plan_from_text contract of the pantry-api recipe-link work (`allow_partial`, `max_km`,
+`not_stocked` / `out_of_range` and a per-line `match`), so that pantry-api has to be behind the
+`pantry` gateway before it runs. The committed file has a placeholder server id:
+
+```bash
+python3 scripts/make_scenarios.py --recipe "$(cat /tmp/cf_recipes_server_id.txt)"   # → scenarios/generated/
+export CONTEXTFORGE_JWT=$(cat ~/.contextforge_jwt)
+../mcp-sim/.venv/bin/mcpsim catalog scenarios/generated/recipe-link-mala-chicken.yaml   # 16 tools
+../mcp-sim/.venv/bin/mcpsim run scenarios/generated/recipe-link-mala-chicken.yaml
+```
+
+The checks on the generator and the scenario use mcp-sim's own loader, matcher and tool filter:
+
+```bash
+../mcp-sim/.venv/bin/python -m pytest tests/
+```
 
 ## What was verified on 2026-10-02
 
@@ -167,6 +191,7 @@ reproduced):
   a second run changes nothing, and with one tool removed from the server by hand it puts it back
   (`15 -> 16: +1 -0`). Through the gateway with the SDK client: `tools/list` (16, pantry and fetch)
   and the `fetch-fetch` calls in the table above, robots.txt refusal included.
+  `mcpsim catalog` on the generated recipe-link scenario lists the same 16 tools.
 
 ## Things that bit, so you don't have to find them again
 

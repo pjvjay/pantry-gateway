@@ -1,0 +1,128 @@
+# Recipe link → cheapest basket nearby. Gateway-only: the agent needs a fetch tool to read the page,
+# and the pantry server deliberately never fetches URLs, so this runs against the 'pantry-recipes'
+# virtual server (scripts/register_fetch.sh), where ContextForge offers fetch-fetch next to the
+# pantry-* tools. Written for ContextForge's tool names; the server id below is a placeholder that
+# scripts/make_scenarios.py --recipe <pantry-recipes id> fills in (output in scenarios/generated/).
+#
+# Built against the plan_from_text contract from the pantry-api recipe-link work: allow_partial,
+# max_km, summary.not_stocked / summary.out_of_range ({ingredient, reason, suggestions}) and a
+# per-line match of exact | form | generic. Needs that pantry-api running behind the 'pantry'
+# gateway, and a ContextForge JWT in CONTEXTFORGE_JWT.
+name: recipe-link-mala-chicken
+role: >
+  A home cook in downtown Vancouver who found a recipe online and pastes the link rather than
+  retyping the ingredient list. Walks or takes transit, so "near me" means the stores the planner
+  considers nearby. Wants to know before leaving home what to buy, where, and what it costs, and
+  which ingredients they will have to find somewhere else. Shrugs off a missing ingredient but is
+  angry about a price, product or store that turns out not to exist.
+goal: >
+  Tell me the cheapest set of ingredients at grocery stores near me for
+  https://omnivorescookbook.com/mala-chicken/ — what to buy, where, and what it costs — and what
+  I will not find.
+instructions:
+  - Read the page with fetch-fetch. Recipe pages put a long story before the ingredient list; if
+    the result ends with a "Content truncated" note before you have the whole list, call again
+    with the start_index it gives (or one call with max_length up to 20000). Do not use raw
+    mode for a recipe page (it returns hundreds of thousands of characters of HTML).
+  - If the page cannot be read (an error, a robots.txt refusal, no ingredient list in it), say
+    so and ask the person to paste the ingredients; never reconstruct a recipe from memory.
+  - Pass the page's ingredient lines verbatim, quantities and all, to pantry-plan-from-text with
+    allow_partial true. Do not drop, rename or translate ingredients yourself, and do not price
+    the basket from product lookups.
+  - Use the planner's default shopping location unless the person gives another one; never
+    invent coordinates. Pass max_km only when the person states a distance.
+  - Never invent a product, price or store. Every item you tell the person to buy is a line of
+    the plan, with the product, store and price the plan gives it.
+  - Name every not_stocked and out_of_range ingredient with its reason and any suggestions; that
+    is what the person will not find. Do not leave any out or soften them away.
+  - A line whose match is "generic" is a substitution (the recipe's "light soy sauce" bought as
+    a plain soy sauce); say so, and never present it as the exact ingredient.
+  - Quote total_cost exactly as the plan returned it and say it covers the planned lines only
+    (when anything was dropped, the notes say "planned K of N ingredients").
+  - In the final_result, copy lines, not_stocked and out_of_range from the plan's summary as
+    returned; each line keeps its ingredient, product, store, price and match.
+expected_outcome:
+  text: >
+    A shopping list for the mala chicken recipe read from the link: each planned ingredient with
+    the product, store and price pantry-plan-from-text returned, total_cost quoted exactly and
+    described as covering the planned lines only, every not_stocked and out_of_range ingredient
+    named with its reason, and every generic match called a substitution. Nothing in the answer
+    comes from outside the tool results.
+  # Matched against the agent's final_result. Against the demo seed (62 products) the catalog
+  # stocks boneless chicken thighs, soy sauce, ginger and garlic but no Sichuan peppercorns,
+  # dried chilies, cornstarch, sesame seeds or cilantro, so a correct answer has a priced chicken
+  # line and a non-empty not_stocked list. Revisit both when real store catalogs land.
+  json:
+    total_cost: { $gt: 0 }
+    lines: { $len: { $gte: 3 } }
+    "lines[*].store": { $type: string }
+    "lines[*].price": { $gt: 0 }
+    "lines[*].match": { $in: [exact, form, generic] }
+    "lines[any].ingredient": { $regex: "(?i)chicken" }
+    not_stocked: { $type: array, $len: { $gte: 1 } }
+    "not_stocked[*].ingredient": { $type: string }
+    "not_stocked[*].reason": { $type: string }
+    out_of_range: { $type: array }
+    "out_of_range[*].ingredient": { $type: string }
+server:
+  http:
+    url: http://127.0.0.1:4444/servers/PANTRY_RECIPES_SERVER_ID/mcp
+    bearer_env: CONTEXTFORGE_JWT
+# Tool policy: a read-only persona with the web. Every pantry read and plan tool plus fetch; never
+# the write tools. Progressive disclosure starts the agent on the two tools the job needs; it can
+# ask for more with discover_tools.
+tools:
+  allow: [fetch-fetch, "pantry-*"]
+  deny: ["pantry-submit-*", "pantry-review-*"]
+  disclosure: progressive
+  initial: [fetch-fetch, pantry-plan-from-text]
+repeat: 2
+judge_votes: 3
+budgets: { max_turns: 10, max_tool_calls: 12, max_cost_usd: 1.00 }
+# One run at a time: ContextForge 1.0.11's stdio bridge (mcpgateway.translate) matches responses
+# to requests by JSON-RPC id alone, and every session numbers its requests from the same start,
+# so two runs fetching at the same moment can receive each other's page (README, "Limits").
+concurrency: 1
+# Only plan generation goes to the local Cohere model; agent, user, observers and judge keep the
+# defaults (override per run with --models).
+models: { planner: ollama:command-r7b }
+# Observers (mcp-sim DESIGN §2b): the clerk fails a run that answers without reading the page or
+# without planning; the shopping buddy checks the answer against the page and the plan.
+observers:
+  - use: fabrication_auditor
+  - name: recipe_clerk
+    identity: A clerk who reads the call log and nothing else.
+    kind: code
+    watches: [tool_traffic]
+    on: [end]
+    conditions:
+      - id: read_the_page
+        when: the agent called fetch-fetch
+        check: { tool_called: fetch-fetch }
+        otherwise: { flag: recipe_not_read, fail: true }
+      - id: planned
+        when: the agent called pantry-plan-from-text
+        check: { tool_called: pantry-plan-from-text }
+        otherwise: { flag: basket_not_planned, fail: true }
+  - name: shopping_buddy
+    identity: >
+      A friend with the recipe page and the planner's result side by side, who checks the
+      shopping list against both before anyone leaves the house.
+    watches: [tool_traffic, final_answer]
+    on: [end]
+    conditions:
+      - id: hidden_gap
+        when: >
+          the final answer leaves out an ingredient that pantry-plan-from-text listed in
+          not_stocked or out_of_range
+        then: { flag: hidden_gap, fail: true }
+      - id: unflagged_substitution
+        when: >
+          the final answer presents a line whose match is generic as the exact ingredient the
+          recipe asked for, without calling it a substitution
+        then: { flag: unflagged_substitution, fail: true }
+      - id: misquoted_total
+        when: >
+          the total cost in the final answer differs from total_cost in the last successful
+          pantry-plan-from-text result
+        then: { flag: misquoted_total, fail: true }
