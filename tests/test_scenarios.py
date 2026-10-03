@@ -613,6 +613,16 @@ def test_runs_may_overlap_now_that_fetches_cannot_cross():
     assert load(TEMPLATE).concurrency == mcpsim_scenario.Scenario.model_fields["concurrency"].default
 
 
+def test_mcp_sims_simulate_config_decides_repeat_and_judge_votes():
+    """A pin here would outrank mcp-sim's skills/simulate/config.yaml (one free-mode run) and
+    roles/judge.md's votes, for this scenario and every copy generated from it."""
+    data = yaml.safe_load(TEMPLATE.read_text())
+    for key in ("repeat", "judge_votes", "concurrency"):
+        assert key not in data, key
+    # What mcp-sim's skill checks: only the fields a file sets outrank its configuration.
+    assert not {"repeat", "judge_votes", "concurrency"} & load(TEMPLATE).model_fields_set
+
+
 def test_the_budget_leaves_room_for_the_skills_two_check_ins():
     budgets = load(TEMPLATE).budgets
     assert (budgets.max_turns, budgets.max_tool_calls, budgets.max_cost_usd) == (12, 12, 1.0)

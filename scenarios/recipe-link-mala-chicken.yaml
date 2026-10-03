@@ -174,8 +174,8 @@ tools:
   deny: ["pantry-submit-*", "pantry-review-*"]
   disclosure: progressive
   initial: [fetch-fetch, pantry-plan-from-text]
-repeat: 2
-judge_votes: 3
+# No repeat or judge_votes: mcp-sim's skills/simulate/config.yaml (one free-mode run) and
+# roles/judge.md (three votes) decide, and --repeat / --modes ask for more.
 # max_turns counts the agent's model calls. The skill tells the user the recipe name and line count
 # before planning and warns that planning costs credits; either can take a round trip with the
 # user, so the turn budget is mcp-sim's default rather than a tight one.
