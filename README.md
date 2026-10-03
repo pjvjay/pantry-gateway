@@ -19,7 +19,7 @@ scripts/fetch_server.py     the reference fetch tool (mcp-server-fetch's code) a
 scripts/run_fetch.sh        run it on :9100 in its own venv, with a scrubbed environment
 scripts/register_fetch.sh   register it as the gateway 'fetch' + create the virtual server 'pantry-recipes'
 scripts/make_scenarios.py   make runnable gateway scenarios for mcp-sim (tool names differ, see below)
-scenarios/                  gateway-only mcp-sim scenarios (they need the fetch tool), server id left blank
+scenarios/                  gateway-only mcp-sim scenarios (scenario v2; they need the fetch tool), server id left blank
 tests/                      the generator and the recipe-link scenario (with mcp-sim's own code), the fetch server
 .env.example                every setting the gateway needs, secrets left for install.sh to generate
 docs/                       what was learned setting it up
@@ -61,16 +61,29 @@ claude mcp add --transport http pantry-gateway http://127.0.0.1:4444/servers/<se
 
 ContextForge names a federated tool `<gateway-slug>-<tool-with-dashes>`: `find_product` becomes
 `pantry-find-product`. A scenario written for the direct server therefore does not match through the
-gateway (its allow/deny globs, instructions and observers name the originals), so the variants are
-generated:
+gateway (its allow/deny globs, instructions, observers and scenario v2 fields name the originals),
+so the variants are generated:
 
 ```bash
 python3 scripts/make_scenarios.py ../mcp-sim/scenarios/pantry "$(cat /tmp/cf_server_id.txt)" scenarios/generated
 export CONTEXTFORGE_JWT=$(cat ~/.contextforge_jwt)
 ../mcp-sim/.venv/bin/mcpsim catalog scenarios/generated/cheapest-penne.yaml
 MCPSIM_DRY_RUN=1 ../mcp-sim/.venv/bin/mcpsim run scenarios/generated/cheapest-penne.yaml
-../mcp-sim/.venv/bin/mcpsim run scenarios/generated/cheapest-penne.yaml --models planner=ollama:command-r7b
+../mcp-sim/.venv/bin/mcpsim run scenarios/generated/cheapest-penne.yaml
 ```
+
+The generator renames tool names wherever a scenario can mention one: `role`, `goal`,
+`instructions`, `expected_outcome.text`, `observers`, and the v2 fields `title` (which also gains
+" (gateway)", so the runner tells the variants apart), `user_instructions`, every string in
+`context` (its `details` values included), `expected_behavior` and `agent.notes`. `category` is
+kept, so a gateway variant sits next to its direct original in the runner. It drops every model pin
+that is not an Anthropic model, under any key of `models` and on any observer (mcp-sim's pantry
+scenarios before feat/simulate pin `planner: ollama:command-r7b`), and says so on stderr: all of a
+simulation's model calls go to the Anthropic API, and the simulate skill's config chooses every
+role's model. `agent.skill` is read the way mcp-sim reads it: an `env:` reference is kept, `~`
+expands, and a relative path is made absolute against the source file, because the generated file
+lives somewhere else. Long prose (`user_instructions`, checklist items) comes out as block scalars
+wrapped at 100 columns, and a file is written only if it parses back to exactly the scenario.
 
 The generated files are git-ignored because they embed this installation's server id.
 [mcp-sim#5](https://github.com/pjvjay/mcp-sim/issues/5) tracks a `server.tool_names` mapping in the
@@ -218,28 +231,40 @@ own page (`run 1` now succeeds, in 10.6 s); see "What was verified on 2026-10-03
 downtown Vancouver pastes the mala chicken link and wants the cheapest basket at stores within 5 km
 (they walk or take transit) and what they will not find. It is written for ContextForge's tool names
 (`fetch-fetch`, `pantry-plan-from-text`) and for the plan_from_text contract of the pantry-api
-recipe-link work, pjvjay/pantry-api#24 (`allow_partial`, `max_km`, `not_stocked` / `out_of_range`
-and a per-line `match`), so that pantry-api has to be behind the `pantry` gateway before it runs, in
-live mode: DEMO_MODE's stand-in parser reads 16 of the page's 17 lines as not stocked, and even
-given clean names its stand-in selector prices salt as crushed tomatoes. The committed file has a
-placeholder server id:
+recipe-link work, pjvjay/pantry-api#24 (`allow_partial`, `max_km`, `not_stocked` / `out_of_range` /
+`skipped`, a per-line `match`, and one purchase per product with `also_lines`), so that pantry-api
+has to be behind the `pantry` gateway before it runs, in live mode: DEMO_MODE's stand-in parser
+reads 16 of the page's 17 lines as not stocked, and even given clean names its stand-in selector
+prices salt as crushed tomatoes. The gateway's copy of the pantry tools must also be fresh enough
+that `pantry-plan-from-text` lists `allow_partial` and `max_km`: the recipe-shopper skill the agent
+runs on stops and reports a stale gateway without them (`REFRESH_PANTRY=true
+scripts/register_fetch.sh` refreshes it). The committed file has a placeholder server id:
 
 ```bash
 python3 scripts/make_scenarios.py --recipe "$(cat /tmp/cf_recipes_server_id.txt)"   # → scenarios/generated/
 export CONTEXTFORGE_JWT=$(cat ~/.contextforge_jwt)
+export RECIPE_SHOPPER_SKILL=../pantry-platform/pantry-api/skills/recipe-shopper/SKILL.md   # see "Scenario v2"
 ../mcp-sim/.venv/bin/mcpsim catalog scenarios/generated/recipe-link-mala-chicken.yaml   # 14 tools
 ../mcp-sim/.venv/bin/mcpsim run scenarios/generated/recipe-link-mala-chicken.yaml
 ```
 
-What it checks follows from pantry-db's 160-product catalog (pantry-db#11, loaded by pantry-api#24):
+What it checks follows from the 161-product catalog pantry-api#24 seeds (pantry-db's, 39077a1):
 it stocks all 17 of the page's ingredients, and every product at all four stores. From the default
-point downtown with `max_km: 5`, a correct answer buys every line at Pantry Mart Downtown (0.3 km),
-GreenLeaf Grocers Kitsilano (2.9) or ValueFoods East Van (4.1), never at MegaSave Richmond (13.9 km),
-where the plan without `max_km` buys the sesame seeds. Its `out_of_range` is empty, because Pantry
-Mart Downtown sells everything, so an entry there has been made up. Its `not_stocked` is whatever
-the planner's parse leaves out (nothing, in the recorded plan), so it is checked for shape, and the
-shopping buddy's `hidden_gap` holds the answer to the plan's own list. A code check fails a run whose
-last plan was not limited to 5 km (`stores ≤ 5 km` in the plan's notes). On this catalog, distance
+point downtown, or the context's 49.2827,-123.1207, with `max_km: 5`, a correct answer buys every
+line at Pantry Mart Downtown (0.3 km), GreenLeaf Grocers Kitsilano (2.9) or ValueFoods East Van
+(4.1), never at MegaSave Richmond (13.9 km), where the plan without `max_km` buys the sesame seeds.
+Its `out_of_range` is empty, because Pantry Mart Downtown sells everything, so an entry there has
+been made up. Its `not_stocked` and `skipped` are whatever the planner's parse and selector leave out
+(nothing, in either recorded plan), so they are checked for shape, and the shopping buddy's
+`hidden_gap` holds the answer to the plan's own lists. Recipe lines that chose the same product are
+one purchase: whether the two Sichuan peppercorn lines (ground, whole) share one depends on the
+selector's pick, so a correct answer has 16 or 17 lines (at least 15 are required), each copied
+with its `also_lines`, and the shopping buddy's `double_counted_purchase` fails an answer that lists
+or prices a shared purchase twice. Its `misquoted_total` fails a basket total that differs from
+`summary.total_cost`, or the recommended trip's total (travel included, so always different) passed
+off as it; the skill reports the trip too, so a trip total labelled as the trip's is allowed. A code
+check fails a run whose last plan was not limited to 5 km (`stores ≤ 5 km` in the plan's notes). On
+this catalog, distance
 alone can never put an ingredient out of range from the default point: either a store within range
 sells everything or no store is in range and the plan fails. So `out_of_range` honesty needs a
 price or diet constraint, or a catalog where stores differ, and `not_stocked` honesty needs a page
@@ -250,16 +275,80 @@ The runs may overlap (`concurrency` is mcp-sim's default again): `concurrency: 1
 for the old stdio bridge.
 
 `tests/test_scenarios.py` checks the generator and the scenario with mcp-sim's own loader, matcher
-and tool filter. Its correct answer is not hand-written. `tests/fixtures/mala-chicken-plan-5km.json`
-is a real `plan_from_text` result for the 17 page lines with `allow_partial` and `max_km: 5`,
-recorded once against pantry-api#24 in live mode, and the test copies it into a final_result as the
-scenario instructs. That answer passes every check; an honest partial answer passes; and each wrong
-answer fails exactly the check that names it (a Richmond store, an invented out-of-range entry,
-dropped lines and so on).
+and tool filter. Its correct answers are not hand-written. `tests/fixtures/mala-chicken-plan-5km.json`
+and `mala-chicken-plan-5km-latlon.json` are real `plan_from_text` results for the 17 page lines with
+`allow_partial` and `max_km: 5`, from the server's default point and from the context's coordinates,
+each recorded once against pantry-api#24 (d2949ae) in live mode, and the test copies them into a
+final_result as the scenario instructs. Both answers pass every check (one has the shared
+peppercorn purchase, 16 lines; the other 17); honest partial answers pass; and each wrong answer
+fails exactly the check that names it (a Richmond store, an invented out-of-range entry, dropped
+lines, a line without `also_lines`, a missing `skipped` and so on).
 
 ```bash
 ../mcp-sim/.venv/bin/python -m pytest tests/
 ```
+
+## Scenario v2 and the simulate skill
+
+mcp-sim runs simulations through one skill, `skills/simulate`, with every LLM call (planner, agent,
+simulated user, observers, judge) on the Anthropic API. Its scenarios add optional v2 fields, and
+the recipe-link scenario uses all of them:
+
+| field | in the recipe-link scenario |
+| --- | --- |
+| `category`, `title` | "Recipe links", "Mala chicken from a recipe link, within 5 km": the runner's group and display name |
+| `user_instructions` | the simulated user's brief, in the second person: a downtown Vancouver home cook who pastes the link, wants what to buy where and the total within 5 km, and what they will not find; impatient with hedging, says yes to a check-in; has only the link, so never makes up an ingredient list, and ends the conversation if the page cannot be read |
+| `context` | `desktop web`, `Vancouver, BC (49.2827, -123.1207)`, `en`, plus details; shown in the runner and given to the simulated user, not to the agent (no `agent_visible`): the user says where they are |
+| `expected_behavior` | seven items the judge grades one by one: reads the page with fetch-fetch; plans the verbatim lines with `allow_partial` and `max_km 5`, at the default location or the place the user named; quotes `total_cost` exactly, any trip total labelled as the trip's; lists every line with product, store and price, never a shared purchase twice; names every not_stocked, out_of_range and skipped ingredient, or says there are none; never presents a generic match as the recipe's ingredient; invents nothing |
+| `agent` | `skill: env:RECIPE_SHOPPER_SKILL`, the recipe-shopper SOP from pantry-api#24, and `notes` saying this environment cannot run the skill's extractor script, so the page is read with fetch-fetch (markdown, `max_length` 20000: one call returns all 17 ingredient lines) |
+
+The instructions and the checklist follow the skill on location: the agent may pass the
+coordinates of a place the user names ("downtown Vancouver" located as 49.2827,-123.1207, the
+second recorded plan) and must not pass coordinates for a place nobody named.
+
+The checklist is written so that a correct agent can pass it on the plans this page really gets.
+mcp-sim's judge passes an item only on a quoted piece of the transcript, fails one with "no
+evidence", and passes a prohibition ("never X") when the transcript shows the agent did not do X.
+No real plan for this page has had a generic match, and one had no shared purchase, so those items
+are prohibitions; an item phrased "calls every generic match a substitution" would have nothing to
+quote and fail a correct agent. Likewise the skill reports the recommended trip, whose total adds
+travel and never equals `total_cost`, so the total item and the shopping buddy's `misquoted_total`
+accept a trip total labelled as the trip's.
+
+There is no `models` block: the simulate skill's `config.yaml` chooses every role's model, and a
+scenario pin would override it. `make_scenarios.py --recipe` refuses a scenario here that pins a
+non-Anthropic model.
+
+`agent.skill` names the SKILL.md the agent under test runs on. mcp-sim reads it when it loads the
+scenario, so `RECIPE_SHOPPER_SKILL` has to point at pantry-api's skill whenever the scenario is
+loaded (`mcpsim catalog`, `mcpsim run`, the runner):
+
+```bash
+export RECIPE_SHOPPER_SKILL=/path/to/pantry-api/skills/recipe-shopper/SKILL.md
+```
+
+or write the path into the generated file instead, so it runs without the variable:
+
+```bash
+python3 scripts/make_scenarios.py --skill-dir ../pantry-platform/pantry-api/skills/recipe-shopper \
+  --recipe "$(cat /tmp/cf_recipes_server_id.txt)"
+```
+
+`--skill-dir` takes the skill's directory (or its SKILL.md), checks that the SKILL.md has
+frontmatter naming the skill, and replaces `env:RECIPE_SHOPPER_SKILL` with the absolute path,
+changing only that line (the comments stay). It works for the mcp-sim variants too. Without it, the
+generator leaves the reference and, if `RECIPE_SHOPPER_SKILL` does not point at a file, says so on
+stderr.
+
+The tests check the v2 fields against that contract themselves (`v2_problems` in
+`tests/test_scenarios.py`): mcp-sim's scenario model before feat/simulate refuses keys it does not
+know, so against it the tests hand mcp-sim the v1 part of each file. Once mcp-sim's model knows the
+v2 keys, the same tests load the whole file with mcp-sim's loader, with `RECIPE_SHOPPER_SKILL`
+pointed at pantry-api's skill when it is checked out in `../pantry-platform` (a stand-in otherwise),
+and check that the agent's SOP is the recipe-shopper skill. Until then, an mcp-sim older than
+feat/simulate cannot load this scenario at all (`mcpsim catalog` and `mcpsim run` included). When
+feat/simulate lands, run `tests/test_scenarios.py` against it again: the v2-loader check
+(`test_the_agent_runs_on_pantry_apis_recipe_shopper`) skips on older mcp-sim.
 
 ## What was verified on 2026-10-02
 
@@ -324,6 +413,50 @@ dropped lines and so on).
   `not_stocked $len >= 1`, which no honest answer could meet; the new spec fails it only on
   `lines[*].store` (the Richmond line).
 * `../mcp-sim/.venv/bin/python -m pytest tests/`: 59 passed.
+
+## What was verified on 2026-10-03: scenario v2
+
+* pantry-api#24 at d2949ae on a fresh SQLite DB: 161 products, 4 stores, 644 store offers.
+  `plan_from_text` on the page's 17 lines, live, `allow_partial`: with `max_km: 5` from the default
+  point, 16 lines (the selector chose the whole peppercorns for both Sichuan peppercorn lines, one
+  purchase, `also_lines: [13]`), total 52.66; with `max_km: 5` at 49.2827,-123.1207, 17 lines
+  (ground peppercorns for line 10), total 58.00. Both have `not_stocked`, `out_of_range` and
+  `skipped` empty, the `stores ≤ 5 km` note, and only the three stores within 5 km (both recorded
+  in `tests/fixtures/`). Without `max_km`: the toasted sesame seeds at MegaSave Richmond (2.64).
+* `fetch` on the running fetch server (:9100) with `max_length: 20000`: 14,392 characters, not
+  truncated, all 17 ingredient lines (three of them with the page's `\*Footnote` markdown escape).
+* An independent probe, separate from the recordings: two more live `plan_from_text` calls on a
+  fresh SQLite seed at d2949ae with the recorded `recipe_text`, `allow_partial` and `max_km: 5`, one
+  from the default point and one at 49.2827,-123.1207. Both came back with 16 lines (the shared
+  whole-peppercorn purchase), total 52.66, every recipe line 1-17 covered, only the three stores
+  within 5 km, `not_stocked` / `out_of_range` / `skipped` empty, no generic match, and a trip total
+  (56.47, 56.50) different from `total_cost`. Copied as instructed, each passes all 15 checks of
+  `expected_outcome.json` under mcp-sim's matcher.
+* `pantry-recipes` on this machine (a direct MCP `tools/list` through ContextForge) lists 14 tools,
+  but its `pantry-plan-from-text` takes only `recipe_text`, `lat`, `lon`, `exclude_origin`,
+  `preference` and `verbose`: no `allow_partial` or `max_km`, because the `pantry` gateway still
+  fronts an older pantry-api. A live run of this scenario needs pantry-api#24 there, in live mode,
+  and a tool refresh first.
+* `tests/test_scenarios.py` against mcp-sim's feat/execution-planner (scenario model without v2):
+  85 passed, 1 skipped (the v2-loader check). Against the feat/simulate scenario model in progress
+  (v2 keys known, `agent.skill` read at load time): 86 passed. Each of 26 deliberate breakages fails
+  a test: a v2 field left unrenamed (`user_instructions`, `expected_behavior`, `agent.notes`,
+  `context`), local model pins kept, or dropped only under the roles mcp-sim knows today, prose not
+  wrapped, a relative skill path left relative, `~` not expanded, the skill path unquoted, the
+  `also_lines` or `skipped` check removed, an Ollama planner put back, "never invent coordinates"
+  put back, the context's location moved, `agent_visible` set, the category or the agent's notes
+  changed, Richmond allowed, the generic or shared-purchase item made a positive claim again, the
+  trip total no longer told apart (instructions, checklist, `misquoted_total`), and the simulated
+  user told to paste a list it does not have.
+* The generated files, made the way the README says: `--recipe` (the env reference kept, a note on
+  stderr while `RECIPE_SHOPPER_SKILL` is unset), `--skill-dir ../pantry-platform/pantry-api/skills/recipe-shopper
+  --recipe` (exactly one line differs, the skill line), mcp-sim's six pantry scenarios at
+  feat/execution-planner (six `dropped models.planner: ollama:command-r7b` notes) and the six in
+  progress on feat/simulate (v2 fields renamed, no pins left to drop); no "ollama" anywhere in the
+  output and no un-prefixed tool name in any string. With the feat/simulate loader in progress and
+  no `RECIPE_SHOPPER_SKILL`, the `--skill-dir` file loads with category, title, context
+  (`agent_visible` false) and seven checklist items intact, the agent's SOP `recipe-shopper`
+  (frontmatter stripped), and every role on an Anthropic model.
 
 ## Things that bit, so you don't have to find them again
 
