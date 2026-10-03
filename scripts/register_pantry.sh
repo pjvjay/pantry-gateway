@@ -3,11 +3,14 @@
 # virtual server, and print the MCP endpoint an agent should use.
 #
 # Inputs (env): CF_URL (default http://127.0.0.1:4444), CF_JWT_FILE (admin JWT), PANTRY_MCP_URL
-# (default http://127.0.0.1:8000/mcp), PANTRY_MCP_TOKEN (bearer the pantry server expects).
+# (default http://127.0.0.1:8000/mcp), PANTRY_MCP_TOKEN (bearer the pantry server expects),
+# CF_STATE_DIR (default /tmp: the tool listing and the server id, cf_server_id.txt, are written there).
 # Idempotent: re-running finds the existing gateway/server by name instead of duplicating them.
 set -euo pipefail
 CF_URL=${CF_URL:-http://127.0.0.1:4444}
 PANTRY_MCP_URL=${PANTRY_MCP_URL:-http://127.0.0.1:8000/mcp}
+# Exported: the Python steps below are quoted heredocs, so they read it from the environment.
+export CF_STATE_DIR=${CF_STATE_DIR:-/tmp}
 : "${CF_JWT_FILE:?path to the ContextForge admin JWT}"
 : "${PANTRY_MCP_TOKEN:?bearer token the pantry /mcp expects}"
 JWT=$(cat "$CF_JWT_FILE")
@@ -38,23 +41,24 @@ else
 fi
 
 echo "== tools federated from pantry"
-curl -s "${auth[@]}" "$CF_URL/tools?gateway_id=$gateway_id&limit=0" > ${CF_STATE_DIR:-/tmp}/cf_tools.json
+curl -s "${auth[@]}" "$CF_URL/tools?gateway_id=$gateway_id&limit=0" > "$CF_STATE_DIR/cf_tools.json"
 python3 - <<'EOF'
-import json
-d = json.load(open('${CF_STATE_DIR:-/tmp}/cf_tools.json'))
+import json, os
+state = os.environ['CF_STATE_DIR']
+d = json.load(open(f'{state}/cf_tools.json'))
 tools = d if isinstance(d, list) else d.get('tools', d.get('items', []))
 print(len(tools), 'tools')
 for t in tools:
     print(f"  {t.get('name'):42s} original={t.get('originalName') or t.get('original_name')!s:28s} id={t.get('id')}")
-json.dump([t['id'] for t in tools], open('${CF_STATE_DIR:-/tmp}/cf_tool_ids.json', 'w'))
+json.dump([t['id'] for t in tools], open(f'{state}/cf_tool_ids.json', 'w'))
 EOF
 
 echo "== virtual server 'pantry-sim' with every pantry tool"
 server_id=$(curl -s "${auth[@]}" "$CF_URL/servers" | j "next((s['id'] for s in (d if isinstance(d,list) else d.get('servers', d.get('items', []))) if s.get('name')=='pantry-sim'), '')")
 if [ -z "$server_id" ]; then
   body=$(python3 <<'PY'
-import json
-ids = json.load(open('${CF_STATE_DIR:-/tmp}/cf_tool_ids.json'))
+import json, os
+ids = json.load(open(os.environ['CF_STATE_DIR'] + '/cf_tool_ids.json'))
 print(json.dumps({"server": {"name": "pantry-sim", "description": "All pantry tools for mcp-sim", "associated_tools": ids}}))
 PY
 )
@@ -66,4 +70,4 @@ else
 fi
 echo
 echo "MCP endpoint for agents: $CF_URL/servers/$server_id/mcp   (Authorization: Bearer <ContextForge JWT>)"
-echo "$server_id" > ${CF_STATE_DIR:-/tmp}/cf_server_id.txt
+echo "$server_id" > "$CF_STATE_DIR/cf_server_id.txt"
