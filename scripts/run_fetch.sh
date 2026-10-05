@@ -68,6 +68,11 @@ clean_env=()
 for name in PATH HOME LANG LC_ALL LC_CTYPE TMPDIR SSL_CERT_FILE SSL_CERT_DIR; do
   [ -z "${!name+x}" ] || clean_env+=("$name=${!name}")
 done
+# Leaving the proxy variables out is not enough on macOS: with none set, Python's urllib (and so
+# httpx) falls back to the *system* proxy settings, and a local proxy app sends every connection to
+# 127.0.0.1, which the address guard then refuses as "a connection issue". no_proxy=* makes httpx
+# dial every host directly, so the guard judges the real destination.
+clean_env+=("no_proxy=*" "NO_PROXY=*")
 PY="$HOME_DIR/.venv-fetch/bin/python"
 SERVER="$REPO/scripts/fetch_server.py"
 

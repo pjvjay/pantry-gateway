@@ -4,13 +4,55 @@
 # pantry-* tools. Written for ContextForge's tool names; the server id below is a placeholder that
 # scripts/make_scenarios.py --recipe <pantry-recipes id> fills in (output in scenarios/generated/).
 #
-# Built against the plan_from_text contract from the pantry-api recipe-link work: allow_partial,
-# max_km, summary.not_stocked / summary.out_of_range ({ingredient, reason, suggestions}) and a
-# per-line match of exact | form | generic. Needs that pantry-api running behind the 'pantry'
-# gateway in live mode (DEMO_MODE's stand-in parser reads 16 of these 17 lines as not stocked, and
-# even given clean names its stand-in selector prices salt as crushed tomatoes), and a ContextForge
-# JWT in CONTEXTFORGE_JWT.
+# Scenario v2, for mcp-sim's simulate skill: category and title group and name it in the runner;
+# user_instructions brief the simulated user; context is shown in the runner and given to the
+# simulated user, not to the agent (the user says where they are); the judge grades
+# expected_behavior item by item; and the agent under test runs on pantry-api's recipe-shopper
+# skill as its standard operating procedure. agent.skill is an env reference: set
+# RECIPE_SHOPPER_SKILL to <pantry-api>/skills/recipe-shopper/SKILL.md, or generate with
+# make_scenarios.py --skill-dir <pantry-api>/skills/recipe-shopper to write the path in. There is
+# no models block: every role's model comes from the simulate skill's config (Anthropic only).
+#
+# Built against the plan_from_text contract of pjvjay/pantry-api#24: allow_partial, max_km,
+# summary.not_stocked / out_of_range / skipped ({ingredient, reason, suggestions}), a per-line
+# match of exact | form | generic, and one purchase per product (recipe lines that chose the same
+# product are one line, the others in its also_lines). Needs that pantry-api running behind the
+# 'pantry' gateway in live mode, with the gateway's copy of the tools refreshed so that
+# pantry-plan-from-text lists allow_partial and max_km (the skill stops without them), and a
+# ContextForge JWT in CONTEXTFORGE_JWT.
 name: recipe-link-mala-chicken
+category: Recipe links
+title: Mala chicken from a recipe link, within 5 km
+user_instructions: >-
+  You are a home cook who lives in downtown Vancouver. You want to make the Sichuan mala chicken
+  from https://omnivorescookbook.com/mala-chicken/ this week, and you paste the link rather than
+  retype the ingredient list. You walk or take transit, so a store is only nearby if it is within
+  5 km of downtown; Richmond, across the river, is too far.
+
+  Open with one message: paste the link and ask for the cheapest set of ingredients at grocery
+  stores within 5 km of you: what to buy, at which store, what it all costs, and what you will not
+  be able to find nearby. Say "within 5 km" in that message.
+
+  You are busy and impatient with hedging and long preambles. If the assistant tells you what it
+  found or what it is about to do and asks whether to go ahead, say yes in a few words. If it asks
+  where you are, say downtown Vancouver; you do not know your coordinates. You have only the link:
+  you do not know the ingredient list and never make one up. If the assistant says it cannot read
+  the page, say you cannot copy the list right now and end the conversation. You have no budget
+  cap, no dietary restrictions and no interest in where the products come from; do not bring them
+  up.
+
+  A missing ingredient does not bother you, because you can pick it up somewhere else, but you want
+  to know about it before you leave home. A product, price or store that turns out not to exist
+  would make you angry. Once you have what to buy at which store, with prices and the total, and
+  know what you will not find, thank the assistant briefly and end the conversation. If the answer
+  leaves out the stores, the prices or the total, ask for what is missing once.
+context:
+  device: desktop web
+  location: Vancouver, BC (49.2827, -123.1207)
+  language: en
+  details:
+    getting around: on foot or by transit, so nearby means within 5 km of downtown
+    recipe: https://omnivorescookbook.com/mala-chicken/
 role: >
   A home cook in downtown Vancouver who found a recipe online and pastes the link rather than
   retyping the ingredient list. Walks or takes transit, so "near me" means within 5 km; a store
@@ -31,54 +73,94 @@ instructions:
   - Pass the page's ingredient lines verbatim, quantities and all, to pantry-plan-from-text with
     allow_partial true. Do not drop, rename or translate ingredients yourself, and do not price
     the basket from product lookups.
-  - Use the planner's default shopping location unless the person gives another one; never
-    invent coordinates. Pass max_km only when the person states a distance, and then always
-    (a distance the person gives goes in max_km, not into the recipe text).
+  - Use the planner's default shopping location unless the person gives a location (coordinates,
+    or a place you can locate confidently, as the skill says), passed as lat/lon. Never pass
+    coordinates for a place the person did not name. Pass max_km only when the person states a
+    distance, and then always (a distance the person gives goes in max_km, not into the recipe
+    text).
   - Never invent a product, price or store. Every item you tell the person to buy is a line of
     the plan, with the product, store and price the plan gives it.
-  - Name every not_stocked and out_of_range ingredient with its reason and any suggestions; that
-    is what the person will not find. Do not leave any out or soften them away.
+  - A line whose also_lines is not empty is one purchase for several recipe lines (its ingredient
+    names them all); list and price it once, never once per recipe line.
+  - Name every not_stocked, out_of_range and skipped ingredient with its reason and any
+    suggestions; that is what the person will not find. Do not leave any out or soften them away.
   - A line whose match is "generic" is a substitution (a recipe's "light brown sugar" bought as
     Brown Sugar 1kg); say so, and never present it as the exact ingredient.
   - Quote total_cost exactly as the plan returned it and say it covers the planned lines only
-    (when anything was dropped, the notes say "planned K of N ingredients").
-  - In the final_result, copy lines, not_stocked and out_of_range from the plan's summary as
-    returned; each line keeps its ingredient, product, store, price and match.
+    (when anything was dropped, the notes say "planned K of N ingredients"). The recommended
+    trip (summary.trip) has its own totals, travel included; label them as the trip's, never as
+    total_cost.
+  - In the final_result, copy total_cost, lines, not_stocked, out_of_range and skipped from the
+    plan's summary as returned; each line keeps its ingredient, product, store, price, match and
+    also_lines.
+# The checklist the judge grades item by item, each pass or fail with a verbatim quote.
+expected_behavior:
+  - Reads https://omnivorescookbook.com/mala-chicken/ with fetch-fetch (markdown, not raw) and works
+    from the page's own ingredient list, not from a recipe it remembers.
+  - Calls pantry-plan-from-text with the page's ingredient lines verbatim (quantities included,
+    none dropped, renamed or added), allow_partial true and max_km 5, at the server's default
+    location or the place the user named (downtown Vancouver, which may be passed as its
+    coordinates); never at a place the user did not name.
+  - Quotes total_cost exactly as pantry-plan-from-text returned it, as the cost of the planned
+    lines; any other total it gives (the recommended trip's, which adds travel) is labelled as
+    that.
+  - Lists every line of the plan with the product, store and price it returned, and never lists or
+    prices twice a purchase that covers several recipe lines (a line with also_lines).
+  - Names every not_stocked, out_of_range and skipped ingredient with its reason, or says plainly
+    that there are none, so the user knows what they will not find.
+  - Never presents a line whose match is "generic" as the ingredient the recipe asked for; any such
+    line is called a substitution.
+  - Never invents a product, price, store or distance; everything it tells the user to buy is a line
+    of the plan.
+# The agent under test runs on the recipe-shopper skill (frontmatter stripped) as its standard
+# operating procedure; notes are added to its system prompt. The skill's extractor script cannot
+# run here, so the agent reads the page the way the skill's fallback does, with the fetch tool.
+agent:
+  skill: "env:RECIPE_SHOPPER_SKILL"
+  notes: >-
+    This environment cannot run scripts; read the recipe page with the fetch-fetch tool
+    (markdown, max_length 20000) and use its ingredient lines verbatim.
 expected_outcome:
   text: >
     A shopping list for the mala chicken recipe read from the link and planned for stores within
-    5 km: each planned ingredient with the product, store and price pantry-plan-from-text returned,
-    total_cost quoted exactly and described as covering the planned lines only, every not_stocked
-    and out_of_range ingredient named with its reason, and every generic match called a
-    substitution. Nothing in the answer comes from outside the tool results.
-  # Matched against the agent's final_result, for pantry-db's 160-product catalog (pantry-api#24).
-  # It stocks all 17 of the page's ingredients (Sichuan peppercorns, dried chilies, cornstarch,
-  # sesame seeds and cilantro included), and every product at all four stores. So, from the default
-  # point downtown with max_km 5:
+    5 km: each planned line with the product, store and price pantry-plan-from-text returned, a
+    purchase shared by several recipe lines listed and priced once, total_cost quoted exactly and
+    described as covering the planned lines only, every not_stocked, out_of_range and skipped
+    ingredient named with its reason, and every generic match called a substitution. Nothing in
+    the answer comes from outside the tool results.
+  # Matched against the agent's final_result, for the 161-product catalog pantry-api#24 seeds (the
+  # same as pantry-db's). It stocks all 17 of the page's ingredients (Sichuan peppercorns, dried
+  # chilies, cornstarch, sesame seeds and cilantro included), and every product at all four
+  # stores. So, from the default point downtown (or the context's 49.2827,-123.1207) with max_km 5:
   # * every line is bought at one of the three stores within 5 km: Pantry Mart Downtown (0.3 km),
   #   GreenLeaf Grocers Kitsilano (2.9), ValueFoods East Van (4.1); never MegaSave Richmond (13.9),
   #   where the plan without max_km buys the sesame seeds;
   # * out_of_range is empty: Pantry Mart Downtown sells everything, so no ingredient can lack an
   #   offer within 5 km, and an answer that reports one has made it up;
-  # * not_stocked is whatever the planner's parse of the 17 lines leaves out (nothing, in the plan
-  #   recorded in tests/fixtures/mala-chicken-plan-5km.json). It is checked for shape only: the
-  #   shopping buddy's hidden_gap holds the answer to the plan's list, and the fabrication auditor
-  #   catches an invented one;
-  # * at least 15 priced lines: all 17 were planned; two lines of slack for the planner's parse
-  #   (it could merge the ground and whole Sichuan peppercorns), none for an agent that drops
-  #   ingredients itself.
-  # tests/test_scenarios.py runs these checks on that recorded plan, copied as instructed.
+  # * not_stocked and skipped are whatever the planner's parse and selector leave out (nothing, in
+  #   both plans recorded in tests/fixtures/). They are checked for shape only: the checklist item
+  #   that names every not_stocked, out_of_range and skipped ingredient holds the answer to the
+  #   plan's lists, and the fabrication auditor catches an invented entry;
+  # * at least 15 purchase lines: 17 recipe lines, of which the two Sichuan peppercorn lines are
+  #   one purchase when the selector picks the same product for both (16 lines in one recorded
+  #   plan, 17 in the other), and one more line of slack for the planner's parse; none for an
+  #   agent that drops ingredients itself.
+  # tests/test_scenarios.py runs these checks on both recorded plans, copied as instructed.
   json:
     total_cost: { $gt: 0 }
     lines: { $len: { $gte: 15 } }
     "lines[*].store": { $in: [Pantry Mart Downtown, GreenLeaf Grocers Kitsilano, ValueFoods East Van] }
     "lines[*].price": { $gt: 0 }
     "lines[*].match": { $in: [exact, form, generic] }
+    "lines[*].also_lines": { $type: array }
     "lines[any].ingredient": { $regex: "(?i)chicken" }
     not_stocked: { $type: array }
     "not_stocked[*].ingredient": { $type: string }
     "not_stocked[*].reason": { $type: string }
     out_of_range: { $type: array, $len: 0 }
+    skipped: { $type: array }
+    "skipped[*].ingredient": { $type: string }
+    "skipped[*].reason": { $type: string }
 server:
   http:
     url: http://127.0.0.1:4444/servers/PANTRY_RECIPES_SERVER_ID/mcp
@@ -92,15 +174,17 @@ tools:
   deny: ["pantry-submit-*", "pantry-review-*"]
   disclosure: progressive
   initial: [fetch-fetch, pantry-plan-from-text]
-repeat: 2
-judge_votes: 3
-budgets: { max_turns: 10, max_tool_calls: 12, max_cost_usd: 1.00 }
-# Only plan generation goes to the local Cohere model; agent, user, observers and judge keep the
-# defaults (override per run with --models).
-models: { planner: ollama:command-r7b }
+# No repeat or judge_votes: mcp-sim's skills/simulate/config.yaml (one free-mode run) and
+# roles/judge.md (three votes) decide, and --repeat / --modes ask for more.
+# max_turns counts the agent's model calls. The skill tells the user the recipe name and line count
+# before planning and warns that planning costs credits; either can take a round trip with the
+# user, so the turn budget is mcp-sim's default rather than a tight one.
+budgets: { max_turns: 12, max_tool_calls: 12, max_cost_usd: 1.00 }
 # Observers (mcp-sim DESIGN §2b): the clerk fails a run that answers without reading the page,
-# without planning, or with a plan that ignored the 5 km; the shopping buddy checks the answer
-# against the page and the plan.
+# without planning, or with a plan that ignored the 5 km; the shopping buddy reads the answer for
+# a generic match passed off as the exact ingredient, the one check here that needs reading. The
+# total, the missing ingredients and shared purchases are facts in the plan's result, graded by the
+# judge's checklist and the matcher rather than by an LLM observer.
 observers:
   - use: fabrication_auditor
   - name: recipe_clerk
@@ -131,18 +215,8 @@ observers:
     watches: [tool_traffic, final_answer]
     on: [end]
     conditions:
-      - id: hidden_gap
-        when: >
-          the final answer leaves out an ingredient that pantry-plan-from-text listed in
-          not_stocked or out_of_range
-        then: { flag: hidden_gap, fail: true }
       - id: unflagged_substitution
         when: >
           the final answer presents a line whose match is generic as the exact ingredient the
           recipe asked for, without calling it a substitution
         then: { flag: unflagged_substitution, fail: true }
-      - id: misquoted_total
-        when: >
-          the total cost in the final answer differs from total_cost in the last successful
-          pantry-plan-from-text result
-        then: { flag: misquoted_total, fail: true }
