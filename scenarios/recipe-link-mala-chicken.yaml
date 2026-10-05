@@ -138,9 +138,9 @@ expected_outcome:
   # * out_of_range is empty: Pantry Mart Downtown sells everything, so no ingredient can lack an
   #   offer within 5 km, and an answer that reports one has made it up;
   # * not_stocked and skipped are whatever the planner's parse and selector leave out (nothing, in
-  #   both plans recorded in tests/fixtures/). They are checked for shape only: the shopping buddy's
-  #   hidden_gap holds the answer to the plan's lists, and the fabrication auditor catches an
-  #   invented entry;
+  #   both plans recorded in tests/fixtures/). They are checked for shape only: the checklist item
+  #   that names every not_stocked, out_of_range and skipped ingredient holds the answer to the
+  #   plan's lists, and the fabrication auditor catches an invented entry;
   # * at least 15 purchase lines: 17 recipe lines, of which the two Sichuan peppercorn lines are
   #   one purchase when the selector picks the same product for both (16 lines in one recorded
   #   plan, 17 in the other), and one more line of slack for the planner's parse; none for an
@@ -181,8 +181,10 @@ tools:
 # user, so the turn budget is mcp-sim's default rather than a tight one.
 budgets: { max_turns: 12, max_tool_calls: 12, max_cost_usd: 1.00 }
 # Observers (mcp-sim DESIGN §2b): the clerk fails a run that answers without reading the page,
-# without planning, or with a plan that ignored the 5 km; the shopping buddy checks the answer
-# against the page and the plan.
+# without planning, or with a plan that ignored the 5 km; the shopping buddy reads the answer for
+# a generic match passed off as the exact ingredient, the one check here that needs reading. The
+# total, the missing ingredients and shared purchases are facts in the plan's result, graded by the
+# judge's checklist and the matcher rather than by an LLM observer.
 observers:
   - use: fabrication_auditor
   - name: recipe_clerk
@@ -213,25 +215,8 @@ observers:
     watches: [tool_traffic, final_answer]
     on: [end]
     conditions:
-      - id: hidden_gap
-        when: >
-          the final answer leaves out an ingredient that pantry-plan-from-text listed in
-          not_stocked, out_of_range or skipped
-        then: { flag: hidden_gap, fail: true }
       - id: unflagged_substitution
         when: >
           the final answer presents a line whose match is generic as the exact ingredient the
           recipe asked for, without calling it a substitution
         then: { flag: unflagged_substitution, fail: true }
-      - id: misquoted_total
-        when: >
-          the final answer's total for the planned lines differs from summary.total_cost in the
-          last successful pantry-plan-from-text result, or the answer gives the recommended
-          trip's total (summary.trip, travel included) as that total; a trip total labelled as
-          the trip's is not a misquote
-        then: { flag: misquoted_total, fail: true }
-      - id: double_counted_purchase
-        when: >
-          the final answer lists or prices more than once a purchase that pantry-plan-from-text
-          made once for several recipe lines (a line with also_lines)
-        then: { flag: double_counted_purchase, fail: true }

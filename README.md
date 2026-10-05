@@ -255,14 +255,17 @@ line at Pantry Mart Downtown (0.3 km), GreenLeaf Grocers Kitsilano (2.9) or Valu
 (4.1), never at MegaSave Richmond (13.9 km), where the plan without `max_km` buys the sesame seeds.
 Its `out_of_range` is empty, because Pantry Mart Downtown sells everything, so an entry there has
 been made up. Its `not_stocked` and `skipped` are whatever the planner's parse and selector leave out
-(nothing, in either recorded plan), so they are checked for shape, and the shopping buddy's
-`hidden_gap` holds the answer to the plan's own lists. Recipe lines that chose the same product are
+(nothing, in either recorded plan), so they are checked for shape, and the checklist item that
+names every not_stocked, out_of_range and skipped ingredient holds the answer to the plan's own
+lists. Recipe lines that chose the same product are
 one purchase: whether the two Sichuan peppercorn lines (ground, whole) share one depends on the
 selector's pick, so a correct answer has 16 or 17 lines (at least 15 are required), each copied
-with its `also_lines`, and the shopping buddy's `double_counted_purchase` fails an answer that lists
-or prices a shared purchase twice. Its `misquoted_total` fails a basket total that differs from
-`summary.total_cost`, or the recommended trip's total (travel included, so always different) passed
-off as it; the skill reports the trip too, so a trip total labelled as the trip's is allowed. A code
+with its `also_lines`, and the checklist fails an answer that lists or prices a shared purchase
+twice, or quotes a basket total that differs from `summary.total_cost` or passes off the
+recommended trip's total (travel included, so always different) as it; the skill reports the trip
+too, so a trip total labelled as the trip's is allowed. These are facts in the plan's result, so
+they are graded by the judge's checklist and the matcher; the shopping buddy, an LLM observer,
+keeps only the check that needs reading: a generic match passed off as the exact ingredient. A code
 check fails a run whose last plan was not limited to 5 km (`stores ≤ 5 km` in the plan's notes). On
 this catalog, distance
 alone can never put an ingredient out of range from the default point: either a store within range
@@ -312,8 +315,8 @@ evidence", and passes a prohibition ("never X") when the transcript shows the ag
 No real plan for this page has had a generic match, and one had no shared purchase, so those items
 are prohibitions; an item phrased "calls every generic match a substitution" would have nothing to
 quote and fail a correct agent. Likewise the skill reports the recommended trip, whose total adds
-travel and never equals `total_cost`, so the total item and the shopping buddy's `misquoted_total`
-accept a trip total labelled as the trip's.
+travel and never equals `total_cost`, so the total item accepts a trip total labelled as the
+trip's.
 
 There is no `models` block: the simulate skill's `config.yaml` chooses every role's model, and a
 scenario pin would override it. `make_scenarios.py --recipe` refuses a scenario here that pins a

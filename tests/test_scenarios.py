@@ -686,12 +686,17 @@ def test_the_clerk_fails_a_plan_that_ignored_the_5_km():
     assert (cond.otherwise.flag, cond.otherwise.fail) == ("distance_ignored", True)
 
 
-def test_the_shopping_buddy_fails_hidden_gaps_misquotes_and_double_counting():
+def test_the_shopping_buddy_only_reads_for_unflagged_substitutions():
+    """The total, the missing ingredients and shared purchases are facts in the plan's result,
+    graded by the checklist and the matcher; the LLM observer keeps the one check that needs
+    reading the answer."""
     buddy = load(TEMPLATE).observer("shopping_buddy")
     flags = {c.id: (c.then.flag, c.then.fail) for c in buddy.conditions}
-    assert flags == {k: (k, True) for k in ("hidden_gap", "unflagged_substitution", "misquoted_total",
-                                             "double_counted_purchase")}
-    assert "not_stocked, out_of_range or skipped" in " ".join(buddy.condition("hidden_gap").when.split())
+    assert flags == {"unflagged_substitution": ("unflagged_substitution", True)}
+    behaviour = " ".join(" ".join(raw(TEMPLATE)["expected_behavior"]).split())
+    for fact in ("Quotes total_cost exactly", "never lists or prices twice a purchase",
+                 "Names every not_stocked, out_of_range and skipped ingredient"):
+        assert fact in behaviour
 
 
 def test_a_trip_total_labelled_as_the_trips_is_not_a_misquote():
@@ -701,10 +706,8 @@ def test_a_trip_total_labelled_as_the_trips_is_not_a_misquote():
     for recorded in RECORDED.values():
         summary = recorded["summary"]
         assert summary["trip"]["total_cost"] != summary["total_cost"]
-    when = " ".join(load(TEMPLATE).observer("shopping_buddy").condition("misquoted_total").when.split())
-    assert "total for the planned lines differs from summary.total_cost" in when
-    assert "gives the recommended trip's total (summary.trip, travel included) as that total" in when
-    assert "a trip total labelled as the trip's is not a misquote" in when
+    behaviour = " ".join(" ".join(raw(TEMPLATE)["expected_behavior"]).split())
+    assert "any other total it gives (the recommended trip's, which adds travel) is labelled as that" in behaviour
     instructions = " ".join(" ".join(raw(TEMPLATE)["instructions"]).split())
     assert "label them as the trip's, never as total_cost" in instructions
 
