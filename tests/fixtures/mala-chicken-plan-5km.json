@@ -1,0 +1,367 @@
+{
+ "about": "pantry-plan-from-text's summary for the 17 ingredient lines of https://omnivorescookbook.com/mala-chicken/ as fetch-fetch returned them (markdown links reduced to their text), with allow_partial true and max_km 5, which is what scenarios/recipe-link-mala-chicken.yaml asks the agent to send. Recorded once, not edited.",
+ "recorded": {
+  "date": "2026-10-03",
+  "pantry_api": "pjvjay/pantry-api#24 feat/recipe-links 59bbe27",
+  "catalog": "160 products (pantry-db#11), fresh SQLite seed",
+  "mode": "live (Claude parse and selector), not DEMO_MODE",
+  "location": "server default 49.28,-123.12"
+ },
+ "arguments": {
+  "recipe_text": "La Zi Ji (Sichuan Mala Chicken) (serves 4)\n- 1 lb boneless skinless chicken thigh (or breast) , cut into 1” (2.5 cm) cubes\n- 1 tablespoon Shaoxing wine (or dry sherry)\n- 1 tablespoon light soy sauce (or soy sauce)\n- 1 tablespoon toasted sesame seeds , and more to garnish\n- 1 to 3 cups whole dried red Sichuan chilies (*Footnote 1)\n- 2 tablespoons Sichuan chili flakes\n- 1 teaspoon sugar\n- 1/4 cup cornstarch\n- 1 teaspoon cayenne powder (*Footnote 2)\n- 1 teaspoon ground Sichuan peppercorns (*Footnote 3)\n- 3/4 teaspoon salt\n- 1/4 to 1/3 cup peanut oil (or vegetable oil)\n- 2 teaspoons Sichuan peppercorns\n- 5 garlic cloves , thinly sliced\n- 1 thumb ginger , minced\n- 4 green onions , sliced\n- 1 cup chopped cilantro , and more for garnish\n",
+  "allow_partial": true,
+  "max_km": 5
+ },
+ "summary": {
+  "recipe_slug": "la_zi_ji_sichuan_mala_chicken",
+  "recipe_name": "La Zi Ji (Sichuan Mala Chicken)",
+  "total_cost": 56.9,
+  "origin_status": "not_requested",
+  "coverage": null,
+  "lines": [
+   {
+    "line_no": 1,
+    "ingredient": "chicken thigh",
+    "product_id": 11,
+    "product": "Chicken Thighs Bone-In",
+    "brand": "Fraser Farms",
+    "size": "700g",
+    "store": "GreenLeaf Grocers Kitsilano",
+    "price": 5.76,
+    "confidence": 1.0,
+    "origin_country": "",
+    "origin_status": "unknown",
+    "match": "exact"
+   },
+   {
+    "line_no": 2,
+    "ingredient": "Shaoxing wine",
+    "product_id": 63,
+    "product": "Shaoxing Cooking Wine 750ml",
+    "brand": "Coastline Foods",
+    "size": "750ml",
+    "store": "ValueFoods East Van",
+    "price": 3.84,
+    "confidence": 1.0,
+    "origin_country": "",
+    "origin_status": "unknown",
+    "match": "exact"
+   },
+   {
+    "line_no": 3,
+    "ingredient": "light soy sauce",
+    "product_id": 64,
+    "product": "Light Soy Sauce 500ml",
+    "brand": "Golden Gate",
+    "size": "500ml",
+    "store": "Pantry Mart Downtown",
+    "price": 4.16,
+    "confidence": 1.0,
+    "origin_country": "",
+    "origin_status": "unknown",
+    "match": "exact"
+   },
+   {
+    "line_no": 4,
+    "ingredient": "sesame seed",
+    "product_id": 73,
+    "product": "Toasted Sesame Seeds 100g",
+    "brand": "Coastline Foods",
+    "size": "100g",
+    "store": "ValueFoods East Van",
+    "price": 2.65,
+    "confidence": 1.0,
+    "origin_country": "",
+    "origin_status": "unknown",
+    "match": "exact"
+   },
+   {
+    "line_no": 5,
+    "ingredient": "dried red Sichuan chili",
+    "product_id": 68,
+    "product": "Dried Red Chilies 100g",
+    "brand": "Coastline Foods",
+    "size": "100g",
+    "store": "GreenLeaf Grocers Kitsilano",
+    "price": 4.38,
+    "confidence": 1.0,
+    "origin_country": "",
+    "origin_status": "unknown",
+    "match": "form"
+   },
+   {
+    "line_no": 6,
+    "ingredient": "Sichuan chili flakes",
+    "product_id": 69,
+    "product": "Sichuan Chili Flakes 100g",
+    "brand": "Golden Gate",
+    "size": "100g",
+    "store": "GreenLeaf Grocers Kitsilano",
+    "price": 4.05,
+    "confidence": 1.0,
+    "origin_country": "",
+    "origin_status": "unknown",
+    "match": "exact"
+   },
+   {
+    "line_no": 7,
+    "ingredient": "sugar",
+    "product_id": 119,
+    "product": "Granulated Sugar 1kg",
+    "brand": "Golden Gate",
+    "size": "1kg",
+    "store": "Pantry Mart Downtown",
+    "price": 2.22,
+    "confidence": 1.0,
+    "origin_country": "",
+    "origin_status": "unknown",
+    "match": "exact"
+   },
+   {
+    "line_no": 8,
+    "ingredient": "cornstarch",
+    "product_id": 81,
+    "product": "Cornstarch 450g",
+    "brand": "Fraser Farms",
+    "size": "450g",
+    "store": "GreenLeaf Grocers Kitsilano",
+    "price": 2.13,
+    "confidence": 1.0,
+    "origin_country": "",
+    "origin_status": "unknown",
+    "match": "exact"
+   },
+   {
+    "line_no": 9,
+    "ingredient": "cayenne powder",
+    "product_id": 133,
+    "product": "Cayenne Pepper Ground 50g",
+    "brand": "Coastline Foods",
+    "size": "50g",
+    "store": "Pantry Mart Downtown",
+    "price": 3.28,
+    "confidence": 1.0,
+    "origin_country": "",
+    "origin_status": "unknown",
+    "match": "form"
+   },
+   {
+    "line_no": 10,
+    "ingredient": "Sichuan peppercorn",
+    "product_id": 66,
+    "product": "Sichuan Peppercorns Whole 50g",
+    "brand": "Fraser Farms",
+    "size": "50g",
+    "store": "GreenLeaf Grocers Kitsilano",
+    "price": 5.07,
+    "confidence": 1.0,
+    "origin_country": "",
+    "origin_status": "unknown",
+    "match": "exact"
+   },
+   {
+    "line_no": 11,
+    "ingredient": "salt",
+    "product_id": 122,
+    "product": "Table Salt 1kg",
+    "brand": "Maple Ridge",
+    "size": "1kg",
+    "store": "ValueFoods East Van",
+    "price": 1.46,
+    "confidence": 1.0,
+    "origin_country": "",
+    "origin_status": "unknown",
+    "match": "exact"
+   },
+   {
+    "line_no": 12,
+    "ingredient": "peanut oil",
+    "product_id": 82,
+    "product": "Peanut Oil 1L",
+    "brand": "Maple Ridge",
+    "size": "1L",
+    "store": "GreenLeaf Grocers Kitsilano",
+    "price": 8.46,
+    "confidence": 1.0,
+    "origin_country": "",
+    "origin_status": "unknown",
+    "match": "exact"
+   },
+   {
+    "line_no": 13,
+    "ingredient": "Sichuan peppercorn",
+    "product_id": 66,
+    "product": "Sichuan Peppercorns Whole 50g",
+    "brand": "Fraser Farms",
+    "size": "50g",
+    "store": "GreenLeaf Grocers Kitsilano",
+    "price": 5.07,
+    "confidence": 1.0,
+    "origin_country": "",
+    "origin_status": "unknown",
+    "match": "exact"
+   },
+   {
+    "line_no": 14,
+    "ingredient": "garlic",
+    "product_id": 13,
+    "product": "Fresh Garlic",
+    "brand": "Coastline Foods",
+    "size": "~50g",
+    "store": "Pantry Mart Downtown",
+    "price": 0.68,
+    "confidence": 1.0,
+    "origin_country": "",
+    "origin_status": "unknown",
+    "match": "exact"
+   },
+   {
+    "line_no": 15,
+    "ingredient": "ginger",
+    "product_id": 25,
+    "product": "Fresh Ginger",
+    "brand": "PantryCo",
+    "size": "100g",
+    "store": "Pantry Mart Downtown",
+    "price": 1.14,
+    "confidence": 1.0,
+    "origin_country": "",
+    "origin_status": "unknown",
+    "match": "exact"
+   },
+   {
+    "line_no": 16,
+    "ingredient": "green onion",
+    "product_id": 142,
+    "product": "Green Onions",
+    "brand": "Maple Ridge",
+    "size": "~100g",
+    "store": "GreenLeaf Grocers Kitsilano",
+    "price": 1.39,
+    "confidence": 1.0,
+    "origin_country": "",
+    "origin_status": "unknown",
+    "match": "exact"
+   },
+   {
+    "line_no": 17,
+    "ingredient": "cilantro",
+    "product_id": 143,
+    "product": "Cilantro",
+    "brand": "Coastline Foods",
+    "size": "~60g",
+    "store": "Pantry Mart Downtown",
+    "price": 1.16,
+    "confidence": 1.0,
+    "origin_country": "",
+    "origin_status": "unknown",
+    "match": "exact"
+   }
+  ],
+  "trip": {
+   "stores": [
+    "Pantry Mart Downtown",
+    "GreenLeaf Grocers Kitsilano"
+   ],
+   "basket_cost": 57.6,
+   "travel_cost": 3.11,
+   "total_cost": 60.71,
+   "savings_vs_one_stop": 1.05,
+   "items": [
+    {
+     "product_id": 11,
+     "store": "GreenLeaf Grocers Kitsilano",
+     "price": 5.76
+    },
+    {
+     "product_id": 63,
+     "store": "GreenLeaf Grocers Kitsilano",
+     "price": 4.42
+    },
+    {
+     "product_id": 64,
+     "store": "Pantry Mart Downtown",
+     "price": 4.16
+    },
+    {
+     "product_id": 73,
+     "store": "GreenLeaf Grocers Kitsilano",
+     "price": 2.69
+    },
+    {
+     "product_id": 68,
+     "store": "GreenLeaf Grocers Kitsilano",
+     "price": 4.38
+    },
+    {
+     "product_id": 69,
+     "store": "GreenLeaf Grocers Kitsilano",
+     "price": 4.05
+    },
+    {
+     "product_id": 119,
+     "store": "Pantry Mart Downtown",
+     "price": 2.22
+    },
+    {
+     "product_id": 81,
+     "store": "GreenLeaf Grocers Kitsilano",
+     "price": 2.13
+    },
+    {
+     "product_id": 133,
+     "store": "Pantry Mart Downtown",
+     "price": 3.28
+    },
+    {
+     "product_id": 66,
+     "store": "GreenLeaf Grocers Kitsilano",
+     "price": 5.07
+    },
+    {
+     "product_id": 122,
+     "store": "GreenLeaf Grocers Kitsilano",
+     "price": 1.54
+    },
+    {
+     "product_id": 82,
+     "store": "GreenLeaf Grocers Kitsilano",
+     "price": 8.46
+    },
+    {
+     "product_id": 66,
+     "store": "GreenLeaf Grocers Kitsilano",
+     "price": 5.07
+    },
+    {
+     "product_id": 13,
+     "store": "Pantry Mart Downtown",
+     "price": 0.68
+    },
+    {
+     "product_id": 25,
+     "store": "Pantry Mart Downtown",
+     "price": 1.14
+    },
+    {
+     "product_id": 142,
+     "store": "GreenLeaf Grocers Kitsilano",
+     "price": 1.39
+    },
+    {
+     "product_id": 143,
+     "store": "Pantry Mart Downtown",
+     "price": 1.16
+    }
+   ]
+  },
+  "notes": [
+   "La Zi Ji (Sichuan Mala Chicken) · serves 4 · 17 ingredients",
+   "stores ≤ 5 km"
+  ],
+  "not_stocked": [],
+  "out_of_range": [],
+  "llm_cost_usd": 0.040799,
+  "latency_ms": 10402
+ }
+}
